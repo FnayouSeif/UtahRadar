@@ -1,0 +1,116 @@
+from lxml import html
+import requests
+import string
+import os
+import csv
+
+
+
+def GetLinks(XmlTree):
+	FullLinks = []
+	base_url = 'http://www.ksl.com'
+	tree = XmlTree
+	links = tree.xpath('//h2[@class = "title"]/a/@href')
+	for link in links:
+		FullLinks.append(base_url + link)
+	return FullLinks
+	
+
+
+def UrlStringer(PageUrl):
+	"""
+	Sends a URL request and converts to a XML tree Object
+	"""
+	page = requests.get(PageUrl)
+	tree = html.fromstring(page.content)
+	return tree
+	
+	
+def GetCarInfo(XmlTree): 
+	tree = XmlTree
+	#PostingDate
+	 
+	PostingDate = tree.xpath('//div[@id="titleMain"]/h2[2]/text()')
+	Address = PostingDate[0].split("|")[0]
+	PostingDate = PostingDate[0].split("|")[1]
+	PostingDate = string.replace(PostingDate,'Posted', '')
+	PostingDate = PostingDate.lstrip()
+	
+	#Price
+	Price = tree.xpath('//div[@id="titleMain"]/h3/text()') 
+	Price = Price[0]
+	
+	#MSRP
+	try:
+		MSRP = tree.xpath('//span[@class="msrpprice cXenseParse"]/text()') 
+		MSRP = MSRP[0]
+		MSRP = string.replace(MSRP,'MSRP','')
+		MSRP = string.replace(MSRP,'|','')
+		MSRP = MSRP.lstrip()
+	except:
+		MSRP = 'NULL'
+	
+    #SPECS
+	Specs = []
+	for i in xrange(1,20):
+		try:
+			DataElement =  tree.xpath('//ul[@id="specificationsTable"]/li['+str(i)+']/span[2]/text()')[0]
+			DataElement = DataElement.lstrip().rstrip()
+			DataElement = string.replace(DataElement,'\n','')
+			if len(DataElement) == 0:
+				DataElement = 'NULL'
+		except:
+			DataElement = 'NULL'
+		Specs.append(DataElement)
+	
+	CarInfoList = [PostingDate,Price ,MSRP,Specs[0],Specs[1],Specs[2],Specs[3],Specs[4],Specs[5],Specs[6],Specs[10],Specs[11],Specs[12],Specs[13],Specs[17],Address]
+	CarInfo = {'PostingDate': PostingDate, 'Price' : Price , 'MSRP' : MSRP, 'Year' : Specs[0], 'Make' : Specs[1], 'Model' : Specs[2], 'Trim':Specs[3], 'Body': Specs[4], 'Mileage' : Specs[5],'VIN':Specs[6], 'Transmission':Specs[10], 'Liters':Specs[11], 'Cylinders':Specs[12], 'Fuel':Specs[13], 'DriveType':Specs[17],'Address':Address }
+		
+	return CarInfoList
+
+def WriteCSV(TargetFile,Mode,InputRow):
+	with open(TargetFile,Mode) as resultFile:
+		wr = csv.writer(resultFile,quoting=csv.QUOTE_ALL,lineterminator='\n')
+		wr.writerow(InputRow)
+		resultFile.close()	
+	
+def MainProc(PageNum):
+	cwd = os.getcwd()
+	log_file_dir = cwd + '\\SystemLog.txt'
+	data_file_dir = cwd + '\\CarData.csv'
+	#gets car records for a single page
+	url = 'http://www.ksl.com/auto/search/index?keyword=&yearFrom=&yearTo=&mileageFrom=&mileageTo=&priceFrom=&priceTo=&zip=&miles=25&newUsed%5B%5D=All&sellerType%5B%5D=&postedTime%5B%5D=&titleType%5B%5D=&body%5B%5D=&transmission%5B%5D=&cylinders%5B%5D=&liters%5B%5D=&fuel%5B%5D=&drive%5B%5D=&numberDoors%5B%5D=&exteriorCondition%5B%5D=&interiorCondition%5B%5D=&cx_navSource=hp_search&page=' + str(PageNum) 
+	links = GetLinks(UrlStringer(url))
+	#print links
+	i = 0
+	log_file = open(log_file_dir,'a')
+	data_file = open(data_file_dir, 'a')
+	for link in links: 
+		try:
+			i = i + 1 
+			log = 'Processing Page Number : ' +  str(PageNum)  + ' | Car Number ' + str(i) + ' URL : ' + link
+			log_file.write(log)
+			print log
+			CarPage = UrlStringer(link)
+			CarData = GetCarInfo(CarPage)
+			CarData.append(link)
+			WriteCSV(data_file_dir,'a',CarData)
+		except: 
+			print log
+			log = 'Error While Processing Page Number : ' +  str(PageNum)  + ' | Car Number ' + str(i) + ' URL : ' + link
+			log_file.write(log)
+	log_file.close()
+
+	
+#____________________________ Main Program ___________________________#
+
+cwd = os.getcwd()
+data_file_dir = cwd + '\\CarData.csv'
+HeaderInfo = ['PostingDate','Price', 'MSRP', 'Year', 'Make', 'Model', 'Trim', 'Body', 'Mileage', 'VIN', 'Transmission', 'Liters', 'Cylinders', 'Fuel','DriveType','Address','Link']
+WriteCSV(data_file_dir,'a',HeaderInfo)
+
+		
+for PageNum in range(2090,2867):
+	MainProc(PageNum)
+
+		
